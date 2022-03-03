@@ -34,10 +34,9 @@ class XAirController {
     port = new_port;
     registerXTouch(new_xTouch);
   };
-
   void registerXTouch(XTouchMiniMixer *new_xTouch) {
     xTouch = new_xTouch;
-    // register xTouch callbacks ?!? -1 von ch auf id?
+    // register xAir callbacks in xTouch
     xTouch->registerMuteChannelCallback(
         [=](auto &&...args) { return muteChannel(args...); });
     xTouch->registerFadeChannelCallback(
@@ -50,6 +49,24 @@ class XAirController {
         [=](auto &&...args) { return fadeMain(args...); });
     xTouch->registerFadeAuxCallback(
         [=](auto &&...args) { return fadeAux(args...); });
+
+    // register xTouch callbacks in xAir
+    registerOnFadeCallback(
+        [=](auto &&...args) { return xTouch->setFaded(args...); });
+    registerOnPanCallback(
+        [=](auto &&...args) { return xTouch->setPanned(args...); });
+    registerOnGainCallback(
+        [=](auto &&...args) { return xTouch->setGained(args...); });
+    registerOnMixCallback(
+        [=](auto &&...args) { return xTouch->setMixed(args...); });
+    registerOnAuxCallback(
+        [=](auto &&...args) { return xTouch->setAuxFaded(args...); });
+    registerOnMainCallback(
+        [=](auto &&...args) { return xTouch->setMainFaded(args...); });
+    registerOnMuteCallback(
+        [=](auto &&...args) { return xTouch->setMuted(args...); });
+    registerOnColorCallback(
+        [=](auto &&...args) { return xTouch->setColored(args...); });
   }
 
   void setup() {
