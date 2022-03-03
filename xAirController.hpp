@@ -15,6 +15,12 @@
 #define DEBUG_PRINTLN(x)
 #endif
 
+// callback types
+typedef std::function<void(uint8_t)> cb_u;
+typedef std::function<void(uint8_t, uint8_t)> cb_uu;
+typedef std::function<void(uint8_t, bool)> cb_ub;
+typedef std::function<void(uint8_t, uint8_t, uint8_t)> cb_uuu;
+
 class XAirController {
  public:
   XAirController(){};
@@ -152,8 +158,8 @@ class XAirController {
       */
   }
 
-  void muteChannel(uint8_t ch, bool val) {
-    sprintf(buf, "/ch/%02d/mix/on", ch);
+  void muteChannel(uint8_t id, bool val) {
+    sprintf(buf, "/ch/%02d/mix/on", id + 1);
     OscWiFi.send(host, port, buf, (int)val);
   }
   void fadeMain(uint8_t val) {
@@ -166,20 +172,20 @@ class XAirController {
     sprintf(buf, "fadeAux(%d);", val);
     DEBUG_PRINTLN(buf);
   }
-  void fadeChannel(uint8_t ch, uint8_t val) {
-    sprintf(buf, "/ch/%02d/mix/fader", ch);
+  void fadeChannel(uint8_t id, uint8_t val) {
+    sprintf(buf, "/ch/%02d/mix/fader", id + 1);
     OscWiFi.send(host, port, buf, uInt2Float(val));
   }
-  void panChannel(uint8_t ch, uint8_t val) {
-    sprintf(buf, "/ch/%02d/mix/pan", ch);
+  void panChannel(uint8_t id, uint8_t val) {
+    sprintf(buf, "/ch/%02d/mix/pan", id + 1);
     OscWiFi.send(host, port, buf, uInt2Float(val));
   }
-  void gainChannel(uint8_t ch, uint8_t val) {
-    sprintf(buf, "/headamp/%02d/gain", ch);
+  void gainChannel(uint8_t id, uint8_t val) {
+    sprintf(buf, "/headamp/%02d/gain", id + 1);
     OscWiFi.send(host, port, buf, uInt2Float(val));
   }
-  void mixChannel(uint8_t ch, uint8_t bus, uint8_t val) {
-    sprintf(buf, "/ch/%02d/mix/%02d/level", ch, bus);
+  void mixChannel(uint8_t id, uint8_t id_bus, uint8_t val) {
+    sprintf(buf, "/ch/%02d/mix/%02d/level", id + 1, id_bus + 1);
     OscWiFi.send(host, port, buf, uInt2Float(val));
     // delay(DLY_SEND);
   }
@@ -188,55 +194,55 @@ class XAirController {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.252]:10024)
     // ADDRESS(/ch/03/mix/fader) FLOAT(0.8162268)
     printReceivedMessage(m);
-    uint8_t ch = parseChannel(m.address());
+    uint8_t id = parseChannel(m.address()) - 1;
     uint8_t fade = float2UInt(m.arg<float>(0));
-    onFadeCallback(ch, fade);
+    runAllCallbacks(onFadeCallbacks, id, fade);
   }
   void onPan(const OscMessage &m) {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.252]:10024)
     // ADDRESS(/ch/04/mix/pan) FLOAT(0.51)
     printReceivedMessage(m);
-    uint8_t ch = parseChannel(m.address());
+    uint8_t id = parseChannel(m.address()) - 1;
     uint8_t pan = float2UInt(m.arg<float>(0));
-    onPanCallback(ch, pan);
+    runAllCallbacks(onPanCallbacks, id, pan);
   }
   void onGain(const OscMessage &m) {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.252]:10024)
     // ADDRESS(/headamp/02/gain) FLOAT(0.5069444)
     printReceivedMessage(m);
-    uint8_t ch = parseHeadamp(m.address());
+    uint8_t id = parseHeadampChannel(m.address()) - 1;
     uint8_t gain = float2UInt(m.arg<float>(0));
-    onGainCallback(ch, gain);
+    runAllCallbacks(onGainCallbacks, id, gain);
   }
   void onMix(const OscMessage &m) {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.252]:10024)
     // ADDRESS(/ch/03/mix/04/level) FLOAT(0.1375)
     printReceivedMessage(m);
-    uint8_t bus = parseMixBus(m.address());
-    uint8_t ch = parseChannel(m.address());
+    uint8_t id_bus = parseMixBus(m.address()) - 1;
+    uint8_t id = parseChannel(m.address()) - 1;
     uint8_t mix = float2UInt(m.arg<float>(0));
-    onMixCallback(ch, mix, bus);
+    runAllCallbacks(onMixCallbacks, id, mix, id_bus);
   }
   void onAux(const OscMessage &m) {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.254]:10024)
     // ADDRESS(/rtn/aux/mix/fader) FLOAT(0.007820137)
     printReceivedMessage(m);
     uint8_t aux = float2UInt(m.arg<float>(0));
-    onAuxCallback(aux);
+    runAllCallbacks(onAuxCallbacks, aux);
   }
   void onMain(const OscMessage &m) {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.254]:10024)
     // ADDRESS(/lr/mix/fader) FLOAT(0.5434995)
     printReceivedMessage(m);
     uint8_t main = float2UInt(m.arg<float>(0));
-    onMainCallback(main);
+    runAllCallbacks(onMainCallbacks, main);
   }
 
   void onMute(const OscMessage &m) {
     printReceivedMessage(m);
-    uint8_t ch = parseChannel(m.address());
+    uint8_t id = parseChannel(m.address()) - 1;
     uint8_t mute = m.arg<int>(0);
-    onMuteCallback(ch, mute == 0);
+    runAllCallbacks(onMuteCallbacks, id, mute == 0);
   }
 
   void onMutes(const OscMessage &m) {
@@ -245,33 +251,33 @@ class XAirController {
         reinterpret_cast<int *>(&(m.arg<std::vector<char>>(0)[0]));
     for (uint8_t i = 1; i < m.arg<int32_t>(0) / sizeof(int); i++) {
       // array represents "on"
-      onMuteCallback(i - 1, temp_array[i] == 0);
+      runAllCallbacks(onMuteCallbacks, (uint8_t)(i - 1), temp_array[i] == 0);
       DEBUG_PRINT(temp_array[i] == 0);
       DEBUG_PRINT(" ");
     }
     DEBUG_PRINTLN();
   }
   // initial float blob callbacks
-  void onFloatBlob(const OscMessage &m,
-                   void(onFloatBlobCallback)(uint8_t, uint8_t)) {
+  void onFloatBlob(const OscMessage &m, std::vector<cb_uu> v_cb) {
     printReceivedMessage(m);
     float *temp_array =
         reinterpret_cast<float *>(&(m.arg<std::vector<char>>(0)[0]));
     for (uint8_t i = 1; i < m.arg<int32_t>(0) / sizeof(float); i++) {
-      onFloatBlobCallback(i - 1, float2UInt(temp_array[i]));
+      runAllCallbacks(v_cb, (uint8_t)(i - 1), float2UInt(temp_array[i]));
     }
     DEBUG_PRINTLN();
   }
-  void onFaders(const OscMessage &m) { return onFloatBlob(m, onFadeCallback); }
-  void onPans(const OscMessage &m) { return onFloatBlob(m, onPanCallback); }
-  void onGains(const OscMessage &m) { return onFloatBlob(m, onGainCallback); }
+  void onFaders(const OscMessage &m) { return onFloatBlob(m, onFadeCallbacks); }
+  void onPans(const OscMessage &m) { return onFloatBlob(m, onPanCallbacks); }
+  void onGains(const OscMessage &m) { return onFloatBlob(m, onGainCallbacks); }
   void onMixes(const OscMessage &m) {
-    uint8_t bus = parseMixesBus(m.address());
+    uint8_t id_bus = parseMixesBus(m.address());
     printReceivedMessage(m);
     float *temp_array =
         reinterpret_cast<float *>(&(m.arg<std::vector<char>>(0)[0]));
     for (uint8_t i = 1; i < m.arg<int32_t>(0) / sizeof(float); i++) {
-      onMixCallback(i - 1, float2UInt(temp_array[i]), bus);
+      runAllCallbacks(onMixCallbacks, (uint8_t)(i - 1),
+                      float2UInt(temp_array[i]), id_bus);
     }
     DEBUG_PRINTLN();
   }
@@ -281,22 +287,56 @@ class XAirController {
     int *color_array =
         reinterpret_cast<int *>(&(m.arg<std::vector<char>>(0)[0]));
     for (uint8_t i = 1; i < m.arg<int32_t>(0) / sizeof(uint32_t); i++) {
-      onColorCallback(i - 1, color_array[i]);
+      runAllCallbacks(onColorCallbacks, (uint8_t)(i - 1),
+                      (uint8_t)color_array[i]);
       DEBUG_PRINT(color_array[i]);
       DEBUG_PRINT(" ");
     }
     DEBUG_PRINTLN();
   }
-
+  // variable arguemtn style?
+  template <typename... Args>
+  void runAllCallbacks(std::vector<std::function<void(Args...)>> const &v_cb,
+                       Args... args) {
+    for (auto const &cb : v_cb) {
+      cb(args...);
+    }
+  }
   // external reaction callbacks
-  void (*onFadeCallback)(uint8_t, uint8_t) = onFadePrintln;
-  void (*onPanCallback)(uint8_t, uint8_t) = onPanPrintln;
-  void (*onGainCallback)(uint8_t, uint8_t) = onGainPrintln;
-  void (*onMixCallback)(uint8_t, uint8_t, uint8_t) = onMixPrintln;
-  void (*onAuxCallback)(uint8_t) = onAuxPrintln;
-  void (*onMainCallback)(uint8_t) = onMainPrintln;
-  void (*onMuteCallback)(uint8_t, bool) = onMutePrintln;
-  void (*onColorCallback)(uint8_t, uint8_t) = onColorPrintln;
+  std::vector<cb_uu> onFadeCallbacks;
+  void registerOnFadeCallback(const cb_uu &cb) {
+    onFadeCallbacks.push_back(cb);
+  }
+  std::vector<cb_uu> onPanCallbacks;
+  void registerOnPanCallback(const cb_uu &cb) { onPanCallbacks.push_back(cb); }
+  std::vector<cb_uu> onGainCallbacks;
+  void registerOnGainCallback(const cb_uu &cb) {
+    onGainCallbacks.push_back(cb);
+  }
+  std::vector<cb_uuu> onMixCallbacks;
+  void registerOnMixCallback(const cb_uuu &cb) { onMixCallbacks.push_back(cb); }
+  std::vector<cb_u> onAuxCallbacks;
+  void registerOnAuxCallback(const cb_u &cb) { onAuxCallbacks.push_back(cb); }
+  std::vector<cb_u> onMainCallbacks;
+  void registerOnMainCallback(const cb_u &cb) { onMainCallbacks.push_back(cb); }
+  std::vector<cb_ub> onMuteCallbacks;
+  void registerOnMuteCallback(const cb_ub &cb) {
+    onMuteCallbacks.push_back(cb);
+  }
+  std::vector<cb_uu> onColorCallbacks;
+  void registerOnColorCallback(const cb_uu &cb) {
+    onColorCallbacks.push_back(cb);
+  }
+  void registerPrintCallbacks() {
+    registerOnFadeCallback(onFadePrintln);
+    registerOnPanCallback(onPanPrintln);
+    registerOnGainCallback(onGainPrintln);
+    registerOnMixCallback(onMixPrintln);
+    registerOnAuxCallback(onAuxPrintln);
+    registerOnMainCallback(onMainPrintln);
+    registerOnMuteCallback(onMutePrintln);
+    registerOnColorCallback(onColorPrintln);
+  }
 
  private:
   char buf[30];
@@ -319,7 +359,7 @@ class XAirController {
   static uint8_t parseChannel(const String s) {
     return s.substring(4, 6).toInt();
   };
-  static uint8_t parseHeadamp(const String s) {
+  static uint8_t parseHeadampChannel(const String s) {
     return s.substring(9, 11).toInt();
   };
   static uint8_t parseMixBus(const String s) {
@@ -338,29 +378,29 @@ class XAirController {
     DEBUG_PRINT(m.address());
     DEBUG_PRINT(" ");
   }
-  static void onFadePrintln(uint8_t ch, uint8_t val) {
+  static void onFadePrintln(uint8_t id, uint8_t val) {
     DEBUG_PRINT("Channel ");
-    DEBUG_PRINT(ch);
+    DEBUG_PRINT(id + 1);
     DEBUG_PRINT(" fader set to ");
     DEBUG_PRINTLN(val);
   };
-  static void onPanPrintln(uint8_t ch, uint8_t val) {
+  static void onPanPrintln(uint8_t id, uint8_t val) {
     DEBUG_PRINT("Channel ");
-    DEBUG_PRINT(ch);
+    DEBUG_PRINT(id + 1);
     DEBUG_PRINT(" pan set to ");
     DEBUG_PRINTLN(val);
   };
-  static void onGainPrintln(uint8_t ch, uint8_t val) {
+  static void onGainPrintln(uint8_t id, uint8_t val) {
     DEBUG_PRINT("Channel ");
-    DEBUG_PRINT(ch);
+    DEBUG_PRINT(id + 1);
     DEBUG_PRINT(" gain set to ");
     DEBUG_PRINTLN(val);
   };
-  static void onMixPrintln(uint8_t ch, uint8_t val, uint8_t bus) {
+  static void onMixPrintln(uint8_t id, uint8_t val, uint8_t id_bus) {
     DEBUG_PRINT("Channel ");
-    DEBUG_PRINT(ch);
+    DEBUG_PRINT(id + 1);
     DEBUG_PRINT(" on bus ");
-    DEBUG_PRINT(bus);
+    DEBUG_PRINT(id_bus + 1);
     DEBUG_PRINT(" mix set to ");
     DEBUG_PRINTLN(val);
   };
@@ -372,15 +412,15 @@ class XAirController {
     DEBUG_PRINT("Aux set to ");
     DEBUG_PRINTLN(val);
   };
-  static void onMutePrintln(uint8_t ch, bool val) {
+  static void onMutePrintln(uint8_t id, bool val) {
     DEBUG_PRINT("Channel ");
-    DEBUG_PRINT(ch);
+    DEBUG_PRINT(id + 1);
     DEBUG_PRINT(" muted: ");
     DEBUG_PRINTLN(val);
   };
-  static void onColorPrintln(uint8_t ch, uint8_t val) {
+  static void onColorPrintln(uint8_t id, uint8_t val) {
     DEBUG_PRINT("Channel ");
-    DEBUG_PRINT(ch);
+    DEBUG_PRINT(id + 1);
     DEBUG_PRINT(" color: ");
     DEBUG_PRINTLN(val);
   }
