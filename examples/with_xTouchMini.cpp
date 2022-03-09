@@ -159,7 +159,7 @@ void loop() {
     wifi_back_up = 0;
   } else if (wifi_down) {
     xTouch.blinkAllButtons();
-    xTouch.setupDebuggingCallbacks();
+    xTouch.registerDebuggingCallbacks();
     wifi_down = 0;
   }
   xTouch.update();

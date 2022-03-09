@@ -8,6 +8,7 @@
 // which can use both WiFi and Ethernet
 #include <ArduinoOSCWiFi.h>
 
+#include <atomic>
 #include <xTouchMiniMixer.hpp>
 
 #ifndef MY_DEBUG
@@ -28,29 +29,22 @@ class XAirController {
     host = new_host;
     port = new_port;
   };
-  XAirController(char *new_host, uint16_t new_port,
-                 XTouchMiniMixer *new_xTouch) {
+  XAirController(char *new_host, uint16_t new_port, XTouchMiniMixer *new_xTouch,
+                 bool loop_back = false) {
     host = new_host;
     port = new_port;
-    registerXTouch(new_xTouch);
+    registerPrintCallbacks();
+    registerXTouch(new_xTouch, loop_back);
   };
-  void registerXTouch(XTouchMiniMixer *new_xTouch) {
+  void update() { OscWiFi.update(); }
+  void registerXTouch(XTouchMiniMixer *new_xTouch, bool loop_back = false) {
     xTouch = new_xTouch;
-    // register xAir callbacks in xTouch
-    xTouch->registerMuteChannelCallback(
-        [=](auto &&...args) { return muteChannel(args...); });
-    xTouch->registerFadeChannelCallback(
-        [=](auto &&...args) { return fadeChannel(args...); });
-    xTouch->registerPanChannelCallback(
-        [=](auto &&...args) { return panChannel(args...); });
-    xTouch->registerGainChannelCallback(
-        [=](auto &&...args) { return gainChannel(args...); });
-    xTouch->registerFadeMainCallback(
-        [=](auto &&...args) { return fadeMain(args...); });
-    xTouch->registerFadeAuxCallback(
-        [=](auto &&...args) { return fadeAux(args...); });
-
+    if (loop_back) {
+      // xTouch->registerDebuggingCallbacks();
+    }
     // register xTouch callbacks in xAir
+    registerOnMuteCallback(
+        [=](auto &&...args) { return xTouch->setMuted(args...); });
     registerOnFadeCallback(
         [=](auto &&...args) { return xTouch->setFaded(args...); });
     registerOnPanCallback(
@@ -59,34 +53,75 @@ class XAirController {
         [=](auto &&...args) { return xTouch->setGained(args...); });
     registerOnMixCallback(
         [=](auto &&...args) { return xTouch->setMixed(args...); });
-    registerOnAuxCallback(
-        [=](auto &&...args) { return xTouch->setAuxFaded(args...); });
     registerOnMainCallback(
         [=](auto &&...args) { return xTouch->setMainFaded(args...); });
-    registerOnMuteCallback(
-        [=](auto &&...args) { return xTouch->setMuted(args...); });
+    registerOnAuxCallback(
+        [=](auto &&...args) { return xTouch->setAuxFaded(args...); });
     registerOnColorCallback(
         [=](auto &&...args) { return xTouch->setColored(args...); });
-  }
 
+    if (!loop_back) {
+      // register xAir callbacks in xTouch
+      xTouch->registerMuteChannelCallback(
+          [=](auto &&...args) { return muteChannel(args...); });
+      xTouch->registerFadeChannelCallback(
+          [=](auto &&...args) { return fadeChannel(args...); });
+      xTouch->registerPanChannelCallback(
+          [=](auto &&...args) { return panChannel(args...); });
+      xTouch->registerGainChannelCallback(
+          [=](auto &&...args) { return gainChannel(args...); });
+      xTouch->registerMixChannelCallback(
+          [=](auto &&...args) { return mixChannel(args...); });
+      xTouch->registerFadeMainCallback(
+          [=](auto &&...args) { return fadeMain(args...); });
+      xTouch->registerFadeAuxCallback(
+          [=](auto &&...args) { return fadeAux(args...); });
+    } else {
+      xTouch->xAir = this;
+      // register xTouch callbacks in xTouch
+      xTouch->registerMuteChannelCallback([=](auto &&...args) {
+        return evokeAllCallbacks(&(xTouch->xAir->onMuteCallbacks), args...);
+      });
+      xTouch->registerFadeChannelCallback([=](auto &&...args) {
+        return evokeAllCallbacks(&(xTouch->xAir->onFadeCallbacks), args...);
+      });
+      xTouch->registerPanChannelCallback([=](auto &&...args) {
+        return evokeAllCallbacks(&(xTouch->xAir->onPanCallbacks), args...);
+      });
+      xTouch->registerGainChannelCallback([=](auto &&...args) {
+        return evokeAllCallbacks(&(xTouch->xAir->onGainCallbacks), args...);
+      });
+      xTouch->registerMixChannelCallback([=](auto &&...args) {
+        return evokeAllCallbacks(&(xTouch->xAir->onMixCallbacks), args...);
+      });
+      xTouch->registerFadeMainCallback([=](auto &&...args) {
+        return evokeAllCallbacks(&(xTouch->xAir->onMainCallbacks), args...);
+      });
+      xTouch->registerFadeAuxCallback([=](auto &&...args) {
+        return evokeAllCallbacks(&(xTouch->xAir->onAuxCallbacks), args...);
+      });
+    }
+  }
+  void runAllMuteCallbacks(auto &&...args) {
+    evokeAllCallbacks(&onMuteCallbacks, args...);
+  }
   void setup() {
+    // Behringer OSC requires both server and client ports to be the same
+    OscWiFi.getClient().localPort(port);
     // subscribe to init messages
     OscWiFi.subscribe(port, "/mutes",
                       [=](auto &&...args) { return onMutes(args...); });
-    OscWiFi.subscribe(port, "/mutes",
-                      [=](auto &&...args) { return onMutes(args...); });
-    OscWiFi.subscribe(port, "/gains",
-                      [=](auto &&...args) { return onGains(args...); });
-    OscWiFi.subscribe(port, "/pans",
-                      [=](auto &&...args) { return onPans(args...); });
     OscWiFi.subscribe(port, "/faders",
                       [=](auto &&...args) { return onFaders(args...); });
+    OscWiFi.subscribe(port, "/pans",
+                      [=](auto &&...args) { return onPans(args...); });
+    OscWiFi.subscribe(port, "/gains",
+                      [=](auto &&...args) { return onGains(args...); });
     OscWiFi.subscribe(port, "/mixes*",
                       [=](auto &&...args) { return onMixes(args...); });
     OscWiFi.subscribe(port, "/colors", [=](auto &&...args) {
       return onOscReceivedColors(args...);
     });
-
     // subscribe to /xremote messages
     OscWiFi.subscribe(port, "/headamp/*/gain",
                       [=](auto &&...args) { return onGain(args...); });
@@ -98,13 +133,11 @@ class XAirController {
                       [=](auto &&...args) { return onMix(args...); });
     OscWiFi.subscribe(port, "/ch/*/mix/on",
                       [=](auto &&...args) { return onMute(args...); });
-    OscWiFi.subscribe(port, "/rtn/aux/mix/fader",
-                      [=](auto &&...args) { return onAux(args...); });
     OscWiFi.subscribe(port, "/lr/mix/fader",
                       [=](auto &&...args) { return onMain(args...); });
-
+    OscWiFi.subscribe(port, "/rtn/aux/mix/fader",
+                      [=](auto &&...args) { return onAux(args...); });
     // OscWiFi.subscribe(port, "/info", onOscReceivedSSSS);
-
     delay(100);
 
     // initialize values
@@ -143,11 +176,11 @@ class XAirController {
       delay(DLY_SEND_INI);
     }
 
-    // initially receive aux and main
-    OscWiFi.send(host, port, "/subscribe", "/rtn/aux/mix/fader", 80);
+    // initially receive main and aux
+    OscWiFi.send(host, port, "/subscribe", "/lr/mix/fader", 80);
     OscWiFi.update();
     delay(DLY_SEND_INI);
-    OscWiFi.send(host, port, "/subscribe", "/lr/mix/fader", 80);
+    OscWiFi.send(host, port, "/subscribe", "/rtn/aux/mix/fader", 80);
     OscWiFi.update();
     delay(DLY_SEND_INI);
 
@@ -176,35 +209,50 @@ class XAirController {
   }
 
   void muteChannel(uint8_t id, bool val) {
-    sprintf(buf, "/ch/%02d/mix/on", id + 1);
-    OscWiFi.send(host, port, buf, (int)val);
+    char osc_buf[25];
+    sprintf((char*)osc_buf, "/ch/%02d/mix/on", id + 1);
+    // Serial.println(osc_buf);
+    OscWiFi.send(host, port, (char*)osc_buf, (int)val);
   }
   void fadeMain(uint8_t val) {
+    char osc_buf[25] = "/lr/mix/fader";
+
+    // sprintf(osc_buf, "/ch/%02d/mix/fader", ++id);
+    //Serial.println(osc_buf);
     OscWiFi.send(host, port, "/lr/mix/fader", uInt2Float(val));
-    sprintf(buf, "fadeMain(%d);", val);
-    DEBUG_PRINTLN(buf);
+    // sprintf(osc_buf, "fadeMain(%d);", val);
+    // Serial.println(osc_buf);
   }
   void fadeAux(uint8_t val) {
+    char osc_buf[25] = "/rtn/aux/mix/fader";
+    //Serial.println(osc_buf);
     OscWiFi.send(host, port, "/rtn/aux/mix/fader", uInt2Float(val));
-    sprintf(buf, "fadeAux(%d);", val);
-    DEBUG_PRINTLN(buf);
+    // sprintf(osc_buf, "fadeAux(%d);", val);
+    // Serial.println(osc_buf);
   }
   void fadeChannel(uint8_t id, uint8_t val) {
-    sprintf(buf, "/ch/%02d/mix/fader", id + 1);
-    OscWiFi.send(host, port, buf, uInt2Float(val));
+    char osc_buf[25];
+    sprintf((char*)osc_buf, "/ch/%02d/mix/fader", ++id);
+    // Serial.println(osc_buf);
+    OscWiFi.send(host, port, (char*)osc_buf, uInt2Float(val));
   }
   void panChannel(uint8_t id, uint8_t val) {
-    sprintf(buf, "/ch/%02d/mix/pan", id + 1);
-    OscWiFi.send(host, port, buf, uInt2Float(val));
+    char osc_buf[25];
+    sprintf(osc_buf, "/ch/%02d/mix/pan", id + 1);
+    // Serial.println(osc_buf);
+    OscWiFi.send(host, port, osc_buf, uInt2Float(val));
   }
   void gainChannel(uint8_t id, uint8_t val) {
-    sprintf(buf, "/headamp/%02d/gain", id + 1);
-    OscWiFi.send(host, port, buf, uInt2Float(val));
+    char osc_buf[25];
+    sprintf(osc_buf, "/headamp/%02d/gain", id + 1);
+    // Serial.println(osc_buf);
+    OscWiFi.send(host, port, osc_buf, uInt2Float(val));
   }
   void mixChannel(uint8_t id, uint8_t id_bus, uint8_t val) {
-    sprintf(buf, "/ch/%02d/mix/%02d/level", id + 1, id_bus + 1);
-    OscWiFi.send(host, port, buf, uInt2Float(val));
-    // delay(DLY_SEND);
+    char osc_buf[25];
+    sprintf(osc_buf, "/ch/%02d/mix/%02d/level", id + 1, id_bus + 1);
+    Serial.println(osc_buf);
+    OscWiFi.send(host, port, osc_buf, uInt2Float(val));
   }
   // osc subscription callbacks
   void onFade(const OscMessage &m) {
@@ -213,7 +261,7 @@ class XAirController {
     printReceivedMessage(m);
     uint8_t id = parseChannel(m.address()) - 1;
     uint8_t fade = float2UInt(m.arg<float>(0));
-    runAllCallbacks(onFadeCallbacks, id, fade);
+    evokeAllCallbacks(&onFadeCallbacks, id, fade);
   }
   void onPan(const OscMessage &m) {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.252]:10024)
@@ -221,7 +269,7 @@ class XAirController {
     printReceivedMessage(m);
     uint8_t id = parseChannel(m.address()) - 1;
     uint8_t pan = float2UInt(m.arg<float>(0));
-    runAllCallbacks(onPanCallbacks, id, pan);
+    evokeAllCallbacks(&onPanCallbacks, id, pan);
   }
   void onGain(const OscMessage &m) {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.252]:10024)
@@ -229,7 +277,7 @@ class XAirController {
     printReceivedMessage(m);
     uint8_t id = parseHeadampChannel(m.address()) - 1;
     uint8_t gain = float2UInt(m.arg<float>(0));
-    runAllCallbacks(onGainCallbacks, id, gain);
+    evokeAllCallbacks(&onGainCallbacks, id, gain);
   }
   void onMix(const OscMessage &m) {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.252]:10024)
@@ -238,28 +286,28 @@ class XAirController {
     uint8_t id_bus = parseMixBus(m.address()) - 1;
     uint8_t id = parseChannel(m.address()) - 1;
     uint8_t mix = float2UInt(m.arg<float>(0));
-    runAllCallbacks(onMixCallbacks, id, mix, id_bus);
+    evokeAllCallbacks(&onMixCallbacks, id, mix, id_bus);
   }
   void onAux(const OscMessage &m) {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.254]:10024)
     // ADDRESS(/rtn/aux/mix/fader) FLOAT(0.007820137)
     printReceivedMessage(m);
     uint8_t aux = float2UInt(m.arg<float>(0));
-    runAllCallbacks(onAuxCallbacks, aux);
+    evokeAllCallbacks(&onAuxCallbacks, aux);
   }
   void onMain(const OscMessage &m) {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.254]:10024)
     // ADDRESS(/lr/mix/fader) FLOAT(0.5434995)
     printReceivedMessage(m);
     uint8_t main = float2UInt(m.arg<float>(0));
-    runAllCallbacks(onMainCallbacks, main);
+    evokeAllCallbacks(&onMainCallbacks, main);
   }
 
   void onMute(const OscMessage &m) {
     printReceivedMessage(m);
     uint8_t id = parseChannel(m.address()) - 1;
     uint8_t mute = m.arg<int>(0);
-    runAllCallbacks(onMuteCallbacks, id, mute == 0);
+    evokeAllCallbacks(&onMuteCallbacks, id, mute == 0);
   }
 
   void onMutes(const OscMessage &m) {
@@ -268,7 +316,7 @@ class XAirController {
         reinterpret_cast<int *>(&(m.arg<std::vector<char>>(0)[0]));
     for (uint8_t i = 1; i < m.arg<int32_t>(0) / sizeof(int); i++) {
       // array represents "on"
-      runAllCallbacks(onMuteCallbacks, (uint8_t)(i - 1), temp_array[i] == 0);
+      evokeAllCallbacks(&onMuteCallbacks, (uint8_t)(i - 1), temp_array[i] == 0);
       DEBUG_PRINT(temp_array[i] == 0);
       DEBUG_PRINT(" ");
     }
@@ -280,7 +328,7 @@ class XAirController {
     float *temp_array =
         reinterpret_cast<float *>(&(m.arg<std::vector<char>>(0)[0]));
     for (uint8_t i = 1; i < m.arg<int32_t>(0) / sizeof(float); i++) {
-      runAllCallbacks(v_cb, (uint8_t)(i - 1), float2UInt(temp_array[i]));
+      evokeAllCallbacks(&v_cb, (uint8_t)(i - 1), float2UInt(temp_array[i]));
     }
     DEBUG_PRINTLN();
   }
@@ -293,8 +341,8 @@ class XAirController {
     float *temp_array =
         reinterpret_cast<float *>(&(m.arg<std::vector<char>>(0)[0]));
     for (uint8_t i = 1; i < m.arg<int32_t>(0) / sizeof(float); i++) {
-      runAllCallbacks(onMixCallbacks, (uint8_t)(i - 1),
-                      float2UInt(temp_array[i]), id_bus);
+      evokeAllCallbacks(&onMixCallbacks, (uint8_t)(i - 1),
+                        float2UInt(temp_array[i]), id_bus);
     }
     DEBUG_PRINTLN();
   }
@@ -304,8 +352,8 @@ class XAirController {
     int *color_array =
         reinterpret_cast<int *>(&(m.arg<std::vector<char>>(0)[0]));
     for (uint8_t i = 1; i < m.arg<int32_t>(0) / sizeof(uint32_t); i++) {
-      runAllCallbacks(onColorCallbacks, (uint8_t)(i - 1),
-                      (uint8_t)color_array[i]);
+      evokeAllCallbacks(&onColorCallbacks, (uint8_t)(i - 1),
+                        (uint8_t)color_array[i]);
       DEBUG_PRINT(color_array[i]);
       DEBUG_PRINT(" ");
     }
@@ -313,35 +361,33 @@ class XAirController {
   }
   // variable arguemtn style?
   template <typename... Args>
-  void runAllCallbacks(std::vector<std::function<void(Args...)>> const &v_cb,
-                       Args... args) {
-    for (auto const &cb : v_cb) {
+  void evokeAllCallbacks(std::vector<std::function<void(Args...)>> *v_cb,
+                         Args... args) {
+    Serial.println("evokeAllCallbacks");
+    Serial.println(v_cb->size());
+    if (v_cb->size() > 10) return;
+    for (auto cb : *v_cb) {
       cb(args...);
+      Serial.println("ran");
     }
   }
   // external reaction callbacks
   std::vector<cb_uu> onFadeCallbacks;
-  void registerOnFadeCallback(const cb_uu &cb) {
-    onFadeCallbacks.push_back(cb);
-  }
+  void registerOnFadeCallback(const cb_uu cb) { onFadeCallbacks.push_back(cb); }
   std::vector<cb_uu> onPanCallbacks;
-  void registerOnPanCallback(const cb_uu &cb) { onPanCallbacks.push_back(cb); }
+  void registerOnPanCallback(const cb_uu cb) { onPanCallbacks.push_back(cb); }
   std::vector<cb_uu> onGainCallbacks;
-  void registerOnGainCallback(const cb_uu &cb) {
-    onGainCallbacks.push_back(cb);
-  }
+  void registerOnGainCallback(const cb_uu cb) { onGainCallbacks.push_back(cb); }
   std::vector<cb_uuu> onMixCallbacks;
-  void registerOnMixCallback(const cb_uuu &cb) { onMixCallbacks.push_back(cb); }
+  void registerOnMixCallback(const cb_uuu cb) { onMixCallbacks.push_back(cb); }
   std::vector<cb_u> onAuxCallbacks;
-  void registerOnAuxCallback(const cb_u &cb) { onAuxCallbacks.push_back(cb); }
+  void registerOnAuxCallback(const cb_u cb) { onAuxCallbacks.push_back(cb); }
   std::vector<cb_u> onMainCallbacks;
-  void registerOnMainCallback(const cb_u &cb) { onMainCallbacks.push_back(cb); }
+  void registerOnMainCallback(const cb_u cb) { onMainCallbacks.push_back(cb); }
   std::vector<cb_ub> onMuteCallbacks;
-  void registerOnMuteCallback(const cb_ub &cb) {
-    onMuteCallbacks.push_back(cb);
-  }
+  void registerOnMuteCallback(const cb_ub cb) { onMuteCallbacks.push_back(cb); }
   std::vector<cb_uu> onColorCallbacks;
-  void registerOnColorCallback(const cb_uu &cb) {
+  void registerOnColorCallback(const cb_uu cb) {
     onColorCallbacks.push_back(cb);
   }
   void registerPrintCallbacks() {
@@ -356,7 +402,7 @@ class XAirController {
   }
 
  private:
-  char buf[30];
+  std::shared_ptr<char*> osc_buf[25];
   char *host;
   uint16_t port;
   XTouchMiniMixer *xTouch;
@@ -442,7 +488,7 @@ class XAirController {
     DEBUG_PRINTLN(val);
   }
 
- protected:
+ protected: 
   // USBH_MIDI *pUSBH_MIDI;
   // USB *pUSB;
   // static void (*onInitUSBCallback)() = nullptr;
