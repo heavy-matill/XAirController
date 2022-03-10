@@ -1,4 +1,11 @@
-
+/*
+ *******************************************************************************
+ * 16 Channel controller for Behringer xTouchMini MIDI USB controller.
+ *******************************************************************************
+ */
+// XTouch in Standard Mode
+// All buttons set to default (hold LayerA+B before connecting to power to
+// reset)
 // delay constants
 // delay after sending OSC command can be reset to 0 with scheduled sending
 #define DLY_SEND 0
@@ -12,18 +19,7 @@
 // delay after sending Midi command to XTouch device 5ms
 //#define DLY_COOL 200
 
-#include <Arduino.h>
-
-#include <xAirController.hpp>
-#include <xTouchMiniMixer.hpp>
-
-#ifdef ESP8266
-#include <ESP8266Ping.h>
-#define PING(x) Ping.ping(x)
-#else
-#define PING(x) WiFi.ping(x)
-#endif
-
+#define XAIR_DUMMY
 #define MY_DEBUG  // comment to not run debug
 
 #ifndef MY_DEBUG
@@ -34,6 +30,17 @@
 #define DEBUG_PRINTLN(x) Serial.println(x)
 #endif
 
+#include <Arduino.h>
+
+#include <xAirController.hpp>
+#include <xTouchMiniMixer.hpp>
+
+// delay constants
+// delay after encoder is not touched anymore 1000ms
+#define DLY_COOL 1000
+// delay after sending Midi command to XTouch device 5ms
+#define DLY_MIDI 5
+
 USB Usb;
 USBHub Hub(&Usb);
 USBH_MIDI Midi(&Usb);
@@ -42,13 +49,14 @@ XTouchMiniMixer xTouch(&Midi, &Usb);
 XAirController xAir;
 
 // WiFi credentials of XAir or router it is connected to
-const char *k_ssid = "xAir-Mathias";  //"OpmKoebes";/
-const char *k_pwd = "1MischeBitte!";  //"Superjeilezick";
+const char *k_ssid = "OpmKoebes";  //"xAir-Mathias";  //"OpmKoebes";/
+const char *k_pwd =
+    "Superjeilezick2021";  //"1MischeBitte!";  //"Superjeilezick";
 
 // ip address of mixer
-char *host_router = "192.168.88.254";
-char *host_ap = "192.168.1.1";
-char *host;
+// char *host_router = "192.168.88.254";
+// char *host_ap = "192.168.1.1";
+char *host = "192.168.0.125";
 // UDP 10024 for xAir18
 const uint16_t k_port = 10024;
 
@@ -71,11 +79,11 @@ static void onStationModeDisconnected(
   wifi_down = 1;
 }
 void getHostIP() {
-  if (WiFi.gatewayIP() == IPAddress(192, 168, 88, 1)) {
+  /*if (WiFi.gatewayIP() == IPAddress(192, 168, 88, 1)) {
     host = host_router;
   } else {
     host = host_ap;
-  }
+  }*/
 }
 
 static void onStationModeGotIP(const WiFiEventStationModeGotIP &event) {
@@ -126,16 +134,14 @@ void setupWifi() {
   // WiFiEvent_t::SYSTEM_EVENT_STA_DISCONNECTED);
   // WiFi.onEvent(onStationModeGotIP, WiFiEvent_t::SYSTEM_EVENT_STA_GOT_IP);
 #endif
-
-  // Behringer OSC requires both server and client ports to be the same
-  OscWiFi.getClient().localPort(k_port);
 }
 
 void setupX() {
   DEBUG_PRINTLN("ready");
   delay(100);
-  xAir = XAirController(host, k_port, &xTouch);
+  xAir = XAirController(host, k_port);
   xAir.setup();
+  xAir.registerPrintCallbacks();
 }
 void onInitUSB() {
   Serial.print("USB device connected: VID=");
@@ -143,25 +149,19 @@ void onInitUSB() {
   Serial.print(", PID=");
   Serial.println(xTouch.getPID());
   xTouch.visualizeAll();
+  xTouch.registerDebuggingCallbacks();
+  xAir.registerXTouch(&xTouch);
 }
+
 // main
 void setup() {
   Serial.begin(115200);
+  delay(100);
   setupWifi();
-  xTouch.setup();
-  xTouch.attachOnInitUSB(onInitUSB);
+  xTouch.setup(onInitUSB);
   setupX();
 }
 void loop() {
-  if (wifi_back_up) {
-    setupX();
-    xTouch.visualizeControlMode();
-    wifi_back_up = 0;
-  } else if (wifi_down) {
-    xTouch.blinkAllButtons();
-    xTouch.registerDebuggingCallbacks();
-    wifi_down = 0;
-  }
   xTouch.update();
-  OscWiFi.update();  // should be called to receive + send osc
+  xAir.update();
 }
