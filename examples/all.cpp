@@ -32,8 +32,10 @@
 
 #include <Arduino.h>
 
-#include <xAirController.hpp>
+#include <xAirLED.hpp>
+#include <xAirTM1638.hpp>
 #include <xTouchMiniMixer.hpp>
+#include <xAirController.hpp>
 
 // delay constants
 // delay after encoder is not touched anymore 1000ms
@@ -46,12 +48,14 @@ USBHub Hub(&Usb);
 USBH_MIDI Midi(&Usb);
 XTouchMiniMixer xTouch(&Midi, &Usb);
 
+XAirTM1638 xTM;
+XAirLED xLED = XAirLED();
+
 XAirController xAir;
 
 // WiFi credentials of XAir or router it is connected to
-const char *k_ssid = "SSID";
-const char *k_pwd =
-    "Password";
+const char *k_ssid = "SSID";   
+const char *k_pwd = "Password"; 
 
 // ip address of mixer
 // char *host_router = "192.168.88.254";
@@ -157,11 +161,18 @@ void onInitUSB() {
 void setup() {
   Serial.begin(115200);
   delay(100);
+  
+  //xLED = XAirLED();
   setupWifi();
   xTouch.setup(onInitUSB);
   setupX();
+  xAir.registerXLED(&xLED);
+  xTM = XAirTM1638();
+  xAir.registerXTM(&xTM);
 }
 void loop() {
   xTouch.update();
   xAir.update();
+  xTM.update();
+  xLED.update();
 }
