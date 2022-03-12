@@ -9,6 +9,8 @@
 // which can use both WiFi and Ethernet
 #include <ArduinoOSCWiFi.h>
 
+#include <xAirLED.hpp>
+#include <xAirTM1638.hpp>
 #include <xTouchMiniMixer.hpp>
 
 #ifndef MY_DEBUG
@@ -21,6 +23,7 @@ typedef std::function<void(uint8_t)> cb_u;
 typedef std::function<void(uint8_t, uint8_t)> cb_uu;
 typedef std::function<void(uint8_t, bool)> cb_ub;
 typedef std::function<void(uint8_t, uint8_t, uint8_t)> cb_uuu;
+typedef std::function<void(uint8_t, char *)> cb_upc;
 
 class XAirController {
  public:
@@ -42,11 +45,34 @@ class XAirController {
     registerXTouch(new_xTouch);
   };
   void update() { OscWiFi.update(); }
+  void registerXLED(XAirLED *new_xLED) {
+    xLED = new_xLED;
+    // register xTM callbacks in xAir
+    registerOnMuteCallback(
+        [=](uint8_t id, bool val) { return xLED->setMuted(id, val); });
+    registerOnColorCallback(
+        [=](auto &&...args) { return xLED->setColor(args...); });
+  }
+  void registerXTM(XAirTM1638 *new_xTM) {
+    xTM = new_xTM;
+    // register xTM callbacks in xAir
+    registerOnMuteCallback(
+        [=](uint8_t id, bool val) { return xTM->setMuted(id, val); });
+    // register xTM callbacks in xAir
+    registerOnNameCallback(
+        [=](uint8_t id, char *name) { return xTM->setName(id, name); });
+
+    // register xAir callbacks in xTM
+    xTM->registerMuteChannelCallback(
+        [=](auto &&...args) { return muteChannel(args...); });
+    xTM->registerGetNameCallback(
+        [=](auto &&...args) { return getName(args...); });
+  }
   void registerXTouch(XTouchMiniMixer *new_xTouch) {
     xTouch = new_xTouch;
     // register xTouch callbacks in xAir
     registerOnMuteCallback(
-        [=](uint8_t id, bool val) { return xTouch->setMuted(id, val); });
+        [=](auto &&...args) { return xTouch->setMuted(args...); });
     registerOnFadeCallback(
         [=](auto &&...args) { return xTouch->setFaded(args...); });
     registerOnPanCallback(
@@ -99,8 +125,11 @@ class XAirController {
     OscWiFi.subscribe(port, "/mixes*",
                       [&](const OscMessage &m) { return onMixes(m); });
     OscWiFi.subscribe(port, "/colors", [&](const OscMessage &m) {
-      return onOscReceivedColors(m);
+      return onColors(m);
     });
+    // subscribe to messages on demand (e.g. name)
+    OscWiFi.subscribe(port, "/ch/*/config/name",
+                      [&](const OscMessage &m) { return onName(m); });
     // subscribe to /xremote messages
     OscWiFi.subscribe(port, "/headamp/*/gain",
                       [&](const OscMessage &m) { return onGain(m); });
@@ -209,6 +238,10 @@ class XAirController {
     sprintf(osc_buf, "/ch/%02d/mix/%02d/level", id + 1, id_bus + 1);
     OscWiFi.send(host, port, osc_buf, uInt2Float(val));
   }
+  void getName(uint8_t id) {
+    sprintf(osc_buf, "/ch/%02d/config/name", id + 1);
+    OscWiFi.send(host, port, "/subscribe", (String)osc_buf, 80);
+  }
   // osc subscription callbacks
   void onFade(const OscMessage &m) {
     // RECEIVE    | ENDPOINT([::ffff:192.168.88.252]:10024)
@@ -302,7 +335,7 @@ class XAirController {
     DEBUG_PRINTLN();
   }
 
-  void onOscReceivedColors(const OscMessage &m) {
+  void onColors(const OscMessage &m) {
     printReceivedMessage(m);
     int *color_array =
         reinterpret_cast<int *>(&(m.arg<std::vector<char>>(0)[0]));
@@ -313,6 +346,13 @@ class XAirController {
       DEBUG_PRINT(" ");
     }
     DEBUG_PRINTLN();
+  }
+  void onName(const OscMessage &m) {
+    printReceivedMessage(m);
+    uint8_t id = parseChannel(m.address()) - 1;
+    char name[12];
+    strcpy(name, m.arg<String>(0).c_str());
+    evokeAllCallbacks(&onNameCallbacks, id, name);
   }
   // variable argument style
   template <typename... Args>
@@ -343,6 +383,10 @@ class XAirController {
   void registerOnColorCallback(const cb_uu cb) {
     onColorCallbacks.push_back(cb);
   }
+  std::vector<cb_upc> onNameCallbacks;
+  void registerOnNameCallback(const cb_upc cb) {
+    onNameCallbacks.push_back(cb);
+  }
   void registerPrintCallbacks() {
     registerOnFadeCallback(onFadePrintln);
     registerOnPanCallback(onPanPrintln);
@@ -359,6 +403,8 @@ class XAirController {
   char *host;
   uint16_t port;
   XTouchMiniMixer *xTouch;
+  XAirTM1638 *xTM;
+  XAirLED *xLED;
   static uint8_t float2UInt(const float f) { return f * 127.0 + 0.5; };
   static float uInt2Float(const uint8_t u) { return ((float)u) / 127.0; };
   static int8_t delta_lin(int8_t delta_x, int8_t x0, int8_t y0) {
