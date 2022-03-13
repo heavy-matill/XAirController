@@ -71,7 +71,7 @@ class XAirLED {
   // button visualizations
   void visualizeColors() {
     for (uint8_t id = 0; id < 16; id++) {
-      leds[pos[id]] = color_map[colors[id] % 8] / 4;
+      leds[pos[id]] = color_map[colors[id] % 8] / 4.0;
     }
   };
   void visualizeMuteLeds() {

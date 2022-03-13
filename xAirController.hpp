@@ -28,23 +28,66 @@ typedef std::function<void(uint8_t, char *)> cb_upc;
 class XAirController {
  public:
   int i;
+  bool b_init = false;
   XAirController(){
       // osc_buf = (char*)malloc(30);
   };
-  XAirController(char *new_host, uint16_t new_port) {
+  XAirController(uint16_t new_port) {
     // osc_buf = (char*)malloc(30);
-    host = new_host;
+    // find host
     port = new_port;
   };
-  XAirController(char *new_host, uint16_t new_port,
+  std::map<std::string, std::string> hosts;
+
+  void findHosts() {
+    char ip[13];
+    char host_temp[16];
+    sprintf(ip, "%d.%d.%d.", WiFi.gatewayIP()[0], WiFi.gatewayIP()[1],
+            WiFi.gatewayIP()[2]);
+    for (uint8_t i = 1; i != 0; i++) {
+      if (i != WiFi.gatewayIP()[3] && i != WiFi.localIP()[3]) {
+        sprintf(host_temp, "%s%d", ip, i);
+        OscWiFi.send(host_temp, port, "/status", 80);
+        OscWiFi.update();
+      }
+    }
+  }
+
+  void registerHost(const OscMessage &m) {
+    DEBUG_PRINT("register Host ");
+    DEBUG_PRINT(m.arg<String>(1).c_str());
+    DEBUG_PRINT(" ");
+    DEBUG_PRINTLN(m.arg<String>(2).c_str());
+    if (host[0] == '\0') {
+      // no host was entered before (e.g. from EEPROM or passed via initializer)
+      DEBUG_PRINT("host was emtpy, now setup with: ");
+      strcpy(host, m.arg<String>(1).c_str());
+      DEBUG_PRINTLN(host);
+      b_init = true;
+    }
+    hosts[m.arg<String>(1).c_str()] = m.arg<String>(2).c_str();
+  };
+
+  XAirController(uint16_t new_port, char *new_host) {
+    // osc_buf = (char*)malloc(30);
+    strcpy(host, new_host);
+    port = new_port;
+  };
+  XAirController(uint16_t new_port, char *new_host,
                  XTouchMiniMixer *new_xTouch) {
     // osc_buf = (char*)malloc(30);
-    host = new_host;
+    strcpy(host, new_host);
     port = new_port;
     registerPrintCallbacks();
     registerXTouch(new_xTouch);
   };
-  void update() { OscWiFi.update(); }
+  void update() {
+    if (b_init) {
+      init();
+      b_init = false;
+    }
+    OscWiFi.update();
+  }
   void registerXLED(XAirLED *new_xLED) {
     xLED = new_xLED;
     // register xTM callbacks in xAir
@@ -111,7 +154,7 @@ class XAirController {
   void runAllMuteCallbacks(auto &&...args) {
     evokeAllCallbacks(&onMuteCallbacks, args...);
   }
-  void setup() {
+  void subscribe() {
     // Behringer OSC requires both server and client ports to be the same
     // subscribe to init messages
     OscWiFi.subscribe(port, "/mutes",
@@ -124,9 +167,8 @@ class XAirController {
                       [&](const OscMessage &m) { return onGains(m); });
     OscWiFi.subscribe(port, "/mixes*",
                       [&](const OscMessage &m) { return onMixes(m); });
-    OscWiFi.subscribe(port, "/colors", [&](const OscMessage &m) {
-      return onColors(m);
-    });
+    OscWiFi.subscribe(port, "/colors",
+                      [&](const OscMessage &m) { return onColors(m); });
     // subscribe to messages on demand (e.g. name)
     OscWiFi.subscribe(port, "/ch/*/config/name",
                       [&](const OscMessage &m) { return onName(m); });
@@ -146,8 +188,18 @@ class XAirController {
     OscWiFi.subscribe(port, "/rtn/aux/mix/fader",
                       [&](const OscMessage &m) { return onAux(m); });
     // OscWiFi.subscribe(port, "/info", onOscReceivedSSSS);
-    delay(100);
-
+    OscWiFi.subscribe(port, "/status",
+                      [&](const OscMessage &m) { return registerHost(m); });
+  };
+  void setup() {
+    subscribe();
+    if (host[0] == 0) {
+      findHosts();
+    } else {
+      init();
+    }
+  };
+  void init() {
     // initialize values
     // receive mutes
     OscWiFi.send(host, port, "/formatsubscribe", "/mutes", "/ch/**/mix/on", 1,
@@ -400,7 +452,7 @@ class XAirController {
 
  private:
   char osc_buf[30];
-  char *host;
+  char host[16] = "";
   uint16_t port;
   XTouchMiniMixer *xTouch;
   XAirTM1638 *xTM;
