@@ -64,7 +64,13 @@ class XAirLED {
   // setters to set local mixer values
   void setMuted(uint8_t id, bool val) {
     setMuteBit(id, val);
-    visualizeMuteLeds();
+    if (val) {
+      leds[pos[id]] = CRGB::Red;
+    } else {
+      leds[pos[id]] = color_map[colors[id] % 8];
+    }
+    FastLED.show();
+    FastLED.delay(1);
   };
   void setColor(uint8_t id, uint8_t val) { colors[id] = val; };
 
