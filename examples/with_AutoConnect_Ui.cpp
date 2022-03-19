@@ -71,13 +71,17 @@ WiFiEventHandler _onStationModeGotIPHandler;
 static void onStationModeDisconnected(
     const WiFiEventStationModeDisconnected &event) {
   // setupWifi();
-  DEBUG_PRINTLN("Got disconnected!");
+  DEBUG_PRINTLN("Got disconnected!"); 
+  xTM.showText("No WiFi");
   // blinkAllButtons();
 }
 
 static void onStationModeGotIP(const WiFiEventStationModeGotIP &event) {
   DEBUG_PRINT("WiFi connected, IP = ");
-  DEBUG_PRINTLN(WiFi.localIP());
+  DEBUG_PRINTLN(WiFi.localIP());  
+  char buf[9];
+  snprintf(buf, 9, WiFi.localIP().toString().c_str());
+  xTM.showText(buf);
   DEBUG_PRINT("Gateway = ");
   DEBUG_PRINTLN(WiFi.gatewayIP());
   // getHostIP();
@@ -86,9 +90,9 @@ static void onStationModeGotIP(const WiFiEventStationModeGotIP &event) {
 }
 #endif
 
-
 void setupX() {
-  DEBUG_PRINTLN("ready");
+  DEBUG_PRINTLN("Hello");  
+  xTM.showText("Hello");
   delay(100);
   xAir = XAirController(k_port); //, host
   //xAir.findHosts();
@@ -103,6 +107,7 @@ void onInitUSB() {
   xTouch.visualizeAll();
   xTouch.registerDebuggingCallbacks();
   xAir.registerXTouch(&xTouch);
+  xTM.showText("USB");
 }
 
 // main
@@ -112,8 +117,8 @@ void setup() {
   
   //xLED = XAirLED();
   //setupWifi();
-  // _onStationModeGotIPHandler = WiFi.onStationModeGotIP(onStationModeGotIP); // check for udp devices and set ip accordingly
-   //  _onStationModeDisconnectedHandler = WiFi.onStationModeDisconnected(onStationModeDisconnected);
+  //_onStationModeGotIPHandler = WiFi.onStationModeGotIP(onStationModeGotIP); // check for udp devices and set ip accordingly
+  //_onStationModeDisconnectedHandler = WiFi.onStationModeDisconnected(onStationModeDisconnected);
   xAuto_setup(&xAir);  
   xTouch.setup(onInitUSB);
   setupX();

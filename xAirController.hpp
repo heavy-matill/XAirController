@@ -9,10 +9,10 @@
 // which can use both WiFi and Ethernet
 #include <ArduinoOSCWiFi.h>
 
+#include <xAirAutoConnect.hpp>
 #include <xAirLED.hpp>
 #include <xAirTM1638.hpp>
 #include <xTouchMiniMixer.hpp>
-#include <xAirAutoConnect.hpp>
 
 #ifndef MY_DEBUG
 #define DEBUG_PRINT(x)
@@ -41,6 +41,9 @@ class XAirController {
   std::map<std::string, std::string> hosts;
 
   void scanHosts() {
+    if (xTM) {
+      xTM->showText("SCAN");
+    }
     char ip[13];
     char host_temp[16];
     hosts.clear();
@@ -58,6 +61,9 @@ class XAirController {
     strcpy(host, new_host);
     DEBUG_PRINT("Switching to host: ");
     DEBUG_PRINTLN(host);
+    if (xTM) {
+      xTM->showText(host);
+    }
     b_init = true;
   }
   void registerHost(const OscMessage &m) {
