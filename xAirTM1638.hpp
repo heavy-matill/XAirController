@@ -25,66 +25,80 @@ class XAirTM1638 {
     strcpy(names[3], "Vox 2");*/
   };
   // states
-  uint8_t st_mute = 0;
+  uint8_t st_mute_visual = 0;
   uint16_t mutes = 0;
   uint8_t button = 0, last_button = 0;
   char name[13] = "Initial";
-  // tasking cooldown
-  unsigned long time_last = 0;
+  char buf[9] = "";
+  char text_buf[9] = "";
+  // times
+  unsigned long time_text_end = millis();
+  unsigned long time_last_button = millis();
   // midi data
   // void setup();
   void update() {
+    button = tm->ReadKey16();
 #ifdef BRIGHTNESS_PIN
     tm->brightness(analogRead(BRIGHTNESS_PIN) / (128.0) - 1);
 #endif
-    button = tm->ReadKey16();
     if (button > 0) {
+      // button down
       if (button != last_button) {
-        time_last = millis();
-        st_mute = 0;
+        // new button
+        time_last_button = millis();
+        st_mute_visual = 0;
+        // call to get name which may be needed if button held for 1 second
         getName(button - 1);
       }
-      if (st_mute < 3) {
-        if (stateMute() > st_mute) {
-          st_mute = stateMute();
-          switch (st_mute) {
+      if (st_mute_visual < 3) {
+        if (stateMute() > st_mute_visual) {
+          st_mute_visual = stateMute();
+          switch (st_mute_visual) {
             case 1:
-              visualizeOnOff(button - 1);
+              showOnOff(button - 1);
               break;
             case 2:
-              visualizeName(button - 1);
+              showName(button - 1);
               break;
-            default:
-              visualizeMuteLeds();
           }
         }
       }
     } else {
-      // button_up
+      // no button
       if (last_button > 0) {
-        if (st_mute < 3) {
+        // button_up
+        if (st_mute_visual < 3) {
           mute(last_button - 1);
         }
-        visualizeMuteLeds();
       }
     }
     last_button = button;
+    visualize();
   };
 
-  void visualizeOnOff(uint8_t id) {
-    char buf[9];
+  void showOnOff(uint8_t id) {
     if (getMuteValue(id)) {
-      sprintf(buf, "On%6d", id + 1);
+      sprintf(text_buf, "On%6d", id + 1);
     } else {
-      sprintf(buf, "Off%5d", id + 1);
+      sprintf(text_buf, "Off%5d", id + 1);
     }
-    DEBUG_PRINTLN(buf);
-    tm->DisplayStr(buf, 0);
+    showText();
   };
-  void visualizeName(uint8_t id) {
-    DEBUG_PRINTLN(name);
-    tm->DisplayStr(name, 0);
+  void showName(uint8_t id) {
+    snprintf(text_buf, 9, name);
+    showText();
   };
+  void showText(char* text = nullptr, uint32_t duration = 1000) {
+    time_text_end = millis() + duration;
+    if (text) {
+      DEBUG_PRINTLN(text);
+      tm->DisplayStr(text, 0);
+    } else {
+      DEBUG_PRINTLN(text_buf);
+      tm->DisplayStr(text_buf, 0);
+    }
+  };
+  bool visualizeTextFinished() { return millis() > time_text_end; };
 
   // setters to set local mixer values
   void setMuted(uint8_t id, bool val) {
@@ -98,6 +112,13 @@ class XAirTM1638 {
     }
   };
 
+  // regular visualization, normally show mutes, unless overwritten with text
+  void visualize() {
+    if (visualizeTextFinished()) {
+      visualizeMuteLeds();
+    }
+  }
+
   // button visualizations
   void visualizeMuteLeds() {
     tm->DisplaySegments(0, reverse(mutes));       // a vertical top
@@ -108,10 +129,6 @@ class XAirTM1638 {
     tm->DisplaySegments(5, 0x00);                 // f horizontal bottom left
     tm->DisplaySegments(6, 0x00);                 // g vertical center
     tm->DisplaySegments(7, 0x00);                 // DP dot
-  };
-  // display text
-  void displayText(){
-
   };
 
   // input callbacks
@@ -133,7 +150,7 @@ class XAirTM1638 {
 
  private:
   TM1638plus_Model2* tm;
-  uint8_t stateMute() { return (millis() - time_last) / 1000 + 1; }
+  uint8_t stateMute() { return (millis() - time_last_button) / 1000 + 1; }
   bool getMuteValue(uint8_t i) { return (mutes & (1 << i)) > 0; };
   void setMuteBit(uint8_t i, bool val) {
     if (val)  // set bit
