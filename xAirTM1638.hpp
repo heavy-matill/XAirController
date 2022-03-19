@@ -11,11 +11,13 @@
 #define DEBUG_PRINTLN(x) Serial.println(x)
 #endif
 
+#define BRIGHTNESS_PIN A0
+
 class XAirTM1638 {
  public:
-  XAirTM1638(uint8_t strobe = 2, uint8_t clock = 0, uint8_t dio = 16, bool swap_nibbles=false, bool high_freq = false) {
-    tm = new TM1638plus_Model2(strobe, clock, dio, swap_nibbles,
-                               high_freq);
+  XAirTM1638(uint8_t strobe = 2, uint8_t clock = 0, uint8_t dio = 16,
+             bool swap_nibbles = false, bool high_freq = false) {
+    tm = new TM1638plus_Model2(strobe, clock, dio, swap_nibbles, high_freq);
     tm->displayBegin();  // Init the module
     /*strcpy(names[2], "Saxophon");
     strcpy(names[1], "Posaune1");
@@ -32,6 +34,9 @@ class XAirTM1638 {
   // midi data
   // void setup();
   void update() {
+#ifdef BRIGHTNESS_PIN
+    tm->brightness(analogRead(BRIGHTNESS_PIN) / (128.0) - 1);
+#endif
     button = tm->ReadKey16();
     if (button > 0) {
       if (button != last_button) {

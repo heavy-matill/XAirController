@@ -5,6 +5,7 @@
 #include <FastLED.h>  //https://github.com/FastLED/FastLED
 
 #define LED_PIN 4
+#define BRIGHTNESS_PIN A0
 
 #define COLOR_ORDER GRB
 #define CHIPSET WS2811
@@ -46,6 +47,9 @@ class XAirLED {
     bool time_switch = (millis() % 1000) > 666;
     if (time_switch && st_show) {
       st_show = 0;
+      #ifdef BRIGHTNESS_PIN
+        FastLED.setBrightness(max({16.0, analogRead(BRIGHTNESS_PIN)/(4.0)}));
+      #endif
       visualizeColors();
       visualizeMuteLeds();
       FastLED.show();
