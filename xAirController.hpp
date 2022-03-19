@@ -12,6 +12,7 @@
 #include <xAirLED.hpp>
 #include <xAirTM1638.hpp>
 #include <xTouchMiniMixer.hpp>
+#include <xAirAutoConnect.hpp>
 
 #ifndef MY_DEBUG
 #define DEBUG_PRINT(x)
@@ -39,9 +40,10 @@ class XAirController {
   };
   std::map<std::string, std::string> hosts;
 
-  void findHosts() {
+  void scanHosts() {
     char ip[13];
     char host_temp[16];
+    hosts.clear();
     sprintf(ip, "%d.%d.%d.", WiFi.gatewayIP()[0], WiFi.gatewayIP()[1],
             WiFi.gatewayIP()[2]);
     for (uint8_t i = 1; i != 0; i++) {
@@ -52,7 +54,12 @@ class XAirController {
       }
     }
   }
-
+  void setHost(const char *new_host) {
+    strcpy(host, new_host);
+    DEBUG_PRINT("Switching to host: ");
+    DEBUG_PRINTLN(host);
+    b_init = true;
+  }
   void registerHost(const OscMessage &m) {
     DEBUG_PRINT("register Host ");
     DEBUG_PRINT(m.arg<String>(1).c_str());
@@ -60,12 +67,10 @@ class XAirController {
     DEBUG_PRINTLN(m.arg<String>(2).c_str());
     if (host[0] == '\0') {
       // no host was entered before (e.g. from EEPROM or passed via initializer)
-      DEBUG_PRINT("host was emtpy, now setup with: ");
-      strcpy(host, m.arg<String>(1).c_str());
-      DEBUG_PRINTLN(host);
-      b_init = true;
+      setHost(m.arg<String>(1).c_str());
     }
-    hosts[m.arg<String>(1).c_str()] = m.arg<String>(2).c_str();
+    auto ret =
+        hosts.insert({m.arg<String>(1).c_str(), m.arg<String>(2).c_str()});
   };
 
   XAirController(uint16_t new_port, char *new_host) {
@@ -83,8 +88,8 @@ class XAirController {
   };
   void update() {
     if (b_init) {
-      init();
       b_init = false;
+      init();
     }
     OscWiFi.update();
   }
@@ -194,7 +199,7 @@ class XAirController {
   void setup() {
     subscribe();
     if (host[0] == 0) {
-      findHosts();
+      scanHosts();
     } else {
       init();
     }
@@ -457,6 +462,7 @@ class XAirController {
   XTouchMiniMixer *xTouch;
   XAirTM1638 *xTM;
   XAirLED *xLED;
+  // XAirAutoConnect *xAuto = nullptr;
   static uint8_t float2UInt(const float f) { return f * 127.0 + 0.5; };
   static float uInt2Float(const uint8_t u) { return ((float)u) / 127.0; };
   static int8_t delta_lin(int8_t delta_x, int8_t x0, int8_t y0) {
