@@ -42,14 +42,25 @@ class XAirLED {
   // GNi, YEi, BLi, MGi, CYi, WHi}
   uint8_t colors[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
   uint8_t st_show = 0;
+  uint32_t time_last_input = millis();
   void update() {
     // update FastLED
+    if (millis() - time_last_input > 60000) {
+      uint8_t brightness = FastLED.getBrightness();
+      if (brightness) {
+        FastLED.setBrightness(--brightness);
+        FastLED.show();
+        FastLED.delay(1);
+      }
+      return;
+      // otherwise dont display anything new
+    }
     bool time_switch = (millis() % 1000) > 666;
     if (time_switch && st_show) {
       st_show = 0;
-      #ifdef BRIGHTNESS_PIN
-        FastLED.setBrightness(max({16.0, analogRead(BRIGHTNESS_PIN)/(4.0)}));
-      #endif
+#ifdef BRIGHTNESS_PIN
+      FastLED.setBrightness(max({16.0, analogRead(BRIGHTNESS_PIN) / (4.0)}));
+#endif
       visualizeColors();
       visualizeMuteLeds();
       FastLED.show();
@@ -67,6 +78,8 @@ class XAirLED {
 
   // setters to set local mixer values
   void setMuted(uint8_t id, bool val) {
+    // note time of last input
+    time_last_input = millis();
     setMuteBit(id, val);
     if (val) {
       leds[pos[id]] = CRGB::Red;
