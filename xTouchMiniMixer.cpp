@@ -216,8 +216,9 @@ void XTouchMiniMixer::onButtonUp(uint8_t id) {
 
   // set encoder button state st_encoder_down
   if ((0 <= id && id < 8) | (32 <= id && id < 40)) {
-    // clear bit
-    st_encoder_down &= ~(1 << (id % 8));
+    if (st_control == 2) {
+      compensateGain(id % 8 + st_layer * 8);
+    }
   }
   if (16 <= id && id < 24) {
     visualizeMuteLed(id - 16);  // ??? reset it because touch enables it?
@@ -240,10 +241,13 @@ void XTouchMiniMixer::onButtonDown(uint8_t id) {
   // get information about layer
   handleNewLayerState(id >= 24);
 
-  // set encoder button state st_encoder_down
+  // if encoder button
   if ((0 <= id && id < 8) | (32 <= id && id < 40)) {
-    // set bit
-    st_encoder_down |= (1 << (id % 8));
+    // if gain control
+    if (st_control == 2) {
+      // store gain until button is released
+      gains_pre_compensation[id % 8] = gains[id % 8 + 8 * st_layer];
+    }
   }
 }
 
@@ -271,10 +275,6 @@ void XTouchMiniMixer::onEncoderMoved(uint8_t ch, uint8_t val) {
         panChannelCallback(id, val);
       } else if (st_control == 2) {
         gainChannelCallback(id, val);
-        if (st_encoder_down & 1<<id%8) {
-          // compensate for gain correction in fader
-          // compensate for gain correction in mix
-        }
       } else {
         // set to values of minimum bus
         for (uint8_t id_bus = 0; id_bus < 6; id_bus++) {
@@ -334,6 +334,28 @@ int8_t XTouchMiniMixer::linearizedValue(int8_t delta_hw, int8_t hw0,
   return y0 + delta_y;
 }
 
+void XTouchMiniMixer::compensateGain(uint8_t id) {
+  int8_t delta_gains = gains[id] - gains_pre_compensation[id % 8];
+  if (delta_gains) {
+    int8_t delta_level = gain2Level(delta_gains);
+    if (delta_level)
+      fadeChannelCallback(
+          id, min({127, max({0, (int16_t)faders[id] - delta_level})}));
+    for (uint8_t id_bus = 0; id_bus < 6; id_bus++) {
+      mixChannelCallback(
+          id, id_bus,
+          min({127, max({0, (int16_t)mixes[id_bus][id] - delta_level})}));
+    }
+  }
+}
+int8_t XTouchMiniMixer::gain2Level(int8_t delta_gain) {
+  Serial.print("delta_gain ");
+  Serial.print(delta_gain);
+  Serial.print(" results in ");
+  Serial.println((double)delta_gain * 100.0 / 72.0);
+  return (double)delta_gain * 100.0 / 72.0;
+}
+
 void XTouchMiniMixer::handleControlStateInput(uint8_t button_control) {
   disableAllCooldowns();
   uint8_t new_control = 1 << button_control;
@@ -369,7 +391,6 @@ void XTouchMiniMixer::handleNewLayerState(uint8_t new_layer) {
     visualizeControlMode();
     visualizeRotaryValues();
     visualizeMuteLeds();
-    st_encoder_down = 0;
   }
 }
 
@@ -416,6 +437,7 @@ void XTouchMiniMixer::disableAllCooldowns() {
   for (uint8_t i = 0; i < (sizeof(cooldowns) / sizeof(*cooldowns)); i++) {
     cooldowns[i] = time_last;
   }
+  // execute cooldown task of analog fader
   executeCooldownTask(8);
 }
 
@@ -447,6 +469,7 @@ void XTouchMiniMixer::executeCooldownTask(uint8_t id) {
     }
   } else {  // rotary
     visualizeHotRotaryValue(id);
+    Serial.println("executeCooldownTask");
   }
 }
 
