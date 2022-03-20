@@ -65,6 +65,7 @@ void xAuto_setup(XAirController* new_xAir = nullptr) {
   // config.ota = AC_OTA_BUILTIN;
   // remove HOME menu entry
   config.menuItems = config.menuItems & ~AC_MENUITEM_HOME;
+  config.hostName = "xAirController";
   portal.config(config);
 
   FlashFS.begin(AUTOCONECT_FS_INITIALIZATION);
