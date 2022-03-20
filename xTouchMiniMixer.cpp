@@ -210,9 +210,15 @@ void XTouchMiniMixer::visualizeControlMode() {
 void XTouchMiniMixer::onButtonUp(uint8_t id) {
   DEBUG_PRINT("Button up id=");
   DEBUG_PRINTLN(id);
+
   // get information about layer
   handleNewLayerState(id >= 24);
 
+  // set encoder button state st_encoder_down
+  if ((0 <= id && id < 8) | (32 <= id && id < 40)) {
+    // clear bit
+    st_encoder_down &= ~(1 << (id % 8));
+  }
   if (16 <= id && id < 24) {
     visualizeMuteLed(id - 16);  // ??? reset it because touch enables it?
     return muteChannelCallback(id - 16, getMuteValue(id - 16));
@@ -225,6 +231,19 @@ void XTouchMiniMixer::onButtonUp(uint8_t id) {
   if ((8 <= id && id < 16) | (32 <= id && id < 40)) {
     // switch to states gain pan etc. independent of layer
     handleControlStateInput(id % 8);
+  }
+}
+void XTouchMiniMixer::onButtonDown(uint8_t id) {
+  DEBUG_PRINT("Button down id=");
+  DEBUG_PRINTLN(id);
+
+  // get information about layer
+  handleNewLayerState(id >= 24);
+
+  // set encoder button state st_encoder_down
+  if ((0 <= id && id < 8) | (32 <= id && id < 40)) {
+    // set bit
+    st_encoder_down |= (1 << (id % 8));
   }
 }
 
@@ -252,6 +271,10 @@ void XTouchMiniMixer::onEncoderMoved(uint8_t ch, uint8_t val) {
         panChannelCallback(id, val);
       } else if (st_control == 2) {
         gainChannelCallback(id, val);
+        if (st_encoder_down & 1<<id%8) {
+          // compensate for gain correction in fader
+          // compensate for gain correction in mix
+        }
       } else {
         // set to values of minimum bus
         for (uint8_t id_bus = 0; id_bus < 6; id_bus++) {
@@ -346,6 +369,7 @@ void XTouchMiniMixer::handleNewLayerState(uint8_t new_layer) {
     visualizeControlMode();
     visualizeRotaryValues();
     visualizeMuteLeds();
+    st_encoder_down = 0;
   }
 }
 
@@ -377,6 +401,7 @@ void XTouchMiniMixer::MIDI_poll() {
         onButtonUp(bufMidi[2]);
         break;
       case 0x09:  //  Button down
+        onButtonDown(bufMidi[2]);
         break;
       case 0x0B:  // Encoder moved
         onEncoderMoved(bufMidi[2], bufMidi[3]);
@@ -449,8 +474,8 @@ void XTouchMiniMixer::gainChannelPrintln(uint8_t id, uint8_t val) {
   Serial.print(", val=");
   Serial.println(val);
 }
-void XTouchMiniMixer::mixChannelPrintln(uint8_t id,
-                                        uint8_t id_bus, uint8_t val) {
+void XTouchMiniMixer::mixChannelPrintln(uint8_t id, uint8_t id_bus,
+                                        uint8_t val) {
   Serial.print("mixChannelCallback ch=");
   Serial.print(id + 1);
   Serial.print(", bus=");
