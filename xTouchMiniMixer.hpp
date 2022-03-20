@@ -25,11 +25,11 @@
 class XAirController;
 class XTouchMiniMixer {
  public:
-  XTouchMiniMixer() {};
+  XTouchMiniMixer(){};
   // initialize with pointers to Midi host device USBH_MIDI and USB
   XTouchMiniMixer(USBH_MIDI *pUSBH_MIDI, USB *pUSB);
   // states
-  uint8_t st_layer, st_control;
+  uint8_t st_layer, st_control, st_encoder_down;
   // mixer values
   uint8_t faders[16], gains[16], pans[16], mixes[6][16], colors[16];
   int8_t aux, aux_main_strt, main, main_strt, hw_slider = -1, hw_slider_strt;
@@ -96,6 +96,7 @@ class XTouchMiniMixer {
 
   // input callbacks
   void onButtonUp(uint8_t id);
+  void onButtonDown(uint8_t id);
   void onEncoderMoved(uint8_t ch, uint8_t val);
   void onSliderMoved(uint8_t val, int8_t aux_main);
   static int8_t linearizedValue(int8_t delta_hw, int8_t hw0, int8_t y0);
