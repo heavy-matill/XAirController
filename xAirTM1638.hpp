@@ -19,16 +19,12 @@ class XAirTM1638 {
              bool swap_nibbles = false, bool high_freq = false) {
     tm = new TM1638plus_Model2(strobe, clock, dio, swap_nibbles, high_freq);
     tm->displayBegin();  // Init the module
-    /*strcpy(names[2], "Saxophon");
-    strcpy(names[1], "Posaune1");
-    strcpy(names[0], "Vox3");
-    strcpy(names[3], "Vox 2");*/
   };
   // states
   uint8_t st_mute_visual = 0;
   uint16_t mutes = 0;
   uint8_t button = 0, last_button = 0;
-  char name[13] = "Initial";
+  char name[13] = "--------";
   char buf[9] = "";
   char text_buf[9] = "";
   // times
@@ -58,7 +54,7 @@ class XAirTM1638 {
               showOnOff(button - 1);
               break;
             case 2:
-              showName(button - 1);
+              showName();
               break;
           }
         }
@@ -82,22 +78,36 @@ class XAirTM1638 {
     } else {
       sprintf(text_buf, "Off%5d", id + 1);
     }
-    showText();
+    showStr();
   };
-  void showName(uint8_t id) {
-    snprintf(text_buf, 9, name);
-    showText();
-  };
-  void showText(char* text = nullptr, uint32_t duration = 1000) {
+  void showName() { showStr(name); };
+
+  void showStr(const char* text = nullptr, const uint32_t duration = 1000,
+               const uint8_t dot_mask = 0) {
     time_text_end = millis() + duration;
     if (text) {
       DEBUG_PRINTLN(text);
-      tm->DisplayStr(text, 0);
+      tm->DisplayStr(text, dot_mask);
     } else {
       DEBUG_PRINTLN(text_buf);
-      tm->DisplayStr(text_buf, 0);
+      tm->DisplayStr(text_buf, dot_mask);
     }
   };
+  void showIP(const char* text, const uint32_t duration = 1000) {
+    char text_buf[9] = "        ";
+    uint8_t dot_mask = 0;
+    int8_t j = strlen(text) - 1;
+    for (int8_t i = 7; (i >= 0) && (j >= 0); j--) {
+      if (text[j] == '.') {
+        // check if character before this is a dot
+        dot_mask |= (1 << (7 - i));
+      } else {
+        text_buf[i] = text[j];
+        i--;
+      }
+    }
+    return showStr(text_buf, duration, dot_mask);
+  }
   bool visualizeTextFinished() { return millis() > time_text_end; };
 
   // setters to set local mixer values
@@ -136,7 +146,9 @@ class XAirTM1638 {
     if (muteChannelCallback) return muteChannelCallback(id, getMuteValue(id));
   };
   void getName(uint8_t id) {
-    if (getNameCallback) return getNameCallback(id);
+    if (getNameCallback) {
+      return getNameCallback(id);
+    }
   };
 
   std::function<void(uint8_t, bool)> muteChannelCallback = nullptr;

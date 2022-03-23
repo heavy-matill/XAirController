@@ -72,7 +72,7 @@ static void onStationModeDisconnected(
     const WiFiEventStationModeDisconnected &event) {
   // setupWifi();
   DEBUG_PRINTLN("Got disconnected!"); 
-  xTM.showText("No WiFi");
+  xTM.showStr("No WiFi");
   // blinkAllButtons();
 }
 
@@ -81,7 +81,7 @@ static void onStationModeGotIP(const WiFiEventStationModeGotIP &event) {
   DEBUG_PRINTLN(WiFi.localIP());  
   char buf[9];
   snprintf(buf, 9, WiFi.localIP().toString().c_str());
-  xTM.showText(buf);
+  xTM.showIP(buf);
   DEBUG_PRINT("Gateway = ");
   DEBUG_PRINTLN(WiFi.gatewayIP());
   // getHostIP();
@@ -92,7 +92,7 @@ static void onStationModeGotIP(const WiFiEventStationModeGotIP &event) {
 
 void setupX() {
   DEBUG_PRINTLN("Hello");  
-  xTM.showText("Hello");
+  xTM.showStr("Hello");
   delay(100);
   xAir = XAirController(k_port); //, host
   //xAir.findHosts();
@@ -107,7 +107,7 @@ void onInitUSB() {
   xTouch.visualizeAll();
   xTouch.registerDebuggingCallbacks();
   xAir.registerXTouch(&xTouch);
-  xTM.showText("USB");
+  xTM.showStr("USB");
 }
 
 // main

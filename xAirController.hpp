@@ -42,7 +42,7 @@ class XAirController {
 
   void scanHosts() {
     if (xTM) {
-      xTM->showText("SCAN");
+      xTM->showStr("SCAN");
     }
     char ip[13];
     char host_temp[16];
@@ -62,7 +62,7 @@ class XAirController {
     DEBUG_PRINT("Switching to host: ");
     DEBUG_PRINTLN(host);
     if (xTM) {
-      xTM->showText(host);
+      xTM->showIP(host, 3000);
     }
     b_init = true;
   }
@@ -74,6 +74,9 @@ class XAirController {
     if (host[0] == '\0') {
       // no host was entered before (e.g. from EEPROM or passed via initializer)
       setHost(m.arg<String>(1).c_str());
+    }    
+    if (xTM) {
+      xTM->showIP(m.arg<String>(1).c_str(), 1000);
     }
     auto ret =
         hosts.insert({m.arg<String>(1).c_str(), m.arg<String>(2).c_str()});
